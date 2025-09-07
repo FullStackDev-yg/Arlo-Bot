@@ -452,16 +452,69 @@ async function logToAdminChannel(message) {
   }
 }
 
-// Function to check Instagram username availability
+// Improved Instagram username check function
 async function checkInstagramUsername(username) {
-  const url = `https://www.instagram.com/${username}/`;
+  const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`;
 
   const userAgents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/122.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_3_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  ];
+
+  try {
+    const response = await axios.get(url, {
+      timeout: 15000,
+      headers: {
+        "User-Agent": userAgents[Math.floor(Math.random() * userAgents.length)],
+        "Accept-Language": "en-US,en;q=0.9",
+        Accept: "application/json",
+        "X-IG-App-ID": "936619743392459", // Important: Instagram app ID
+        "X-Requested-With": "XMLHttpRequest",
+        Referer: `https://www.instagram.com/${username}/`,
+        Origin: "https://www.instagram.com",
+      },
+      validateStatus: function (status) {
+        return status === 200 || status === 404;
+      },
+    });
+
+    // If we get a 404, the username is available
+    if (response.status === 404) {
+      return { status: 404, data: null };
+    }
+
+    // If we get data, check if the user exists
+    const data = response.data;
+    const isAvailable = !data.data || !data.data.user;
+
+    return {
+      status: isAvailable ? 404 : 200,
+      data: response.data,
+    };
+  } catch (error) {
+    console.log(`Instagram API check failed for ${username}:`, error.message);
+
+    // Fallback to the regular method if API fails
+    try {
+      return await checkInstagramUsernameFallback(username);
+    } catch (fallbackError) {
+      console.log(
+        `Fallback check also failed for ${username}:`,
+        fallbackError.message
+      );
+      return { status: 200, data: null }; // Assume unavailable on error
+    }
+  }
+}
+
+// Fallback method using the regular webpage
+async function checkInstagramUsernameFallback(username) {
+  const url = `https://www.instagram.com/${username}/`;
+
+  const userAgents = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   ];
 
   try {
@@ -471,25 +524,13 @@ async function checkInstagramUsername(username) {
         "User-Agent": userAgents[Math.floor(Math.random() * userAgents.length)],
         "Accept-Language": "en-US,en;q=0.9",
         Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        Connection: "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Cache-Control": "max-age=0",
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         Referer: "https://www.google.com/",
-      },
-      validateStatus: function (status) {
-        return (status >= 200 && status < 300) || status === 404;
       },
     });
 
     const responseText = response.data;
     const isAvailable =
-      response.status === 404 ||
       responseText.includes('"user":null') ||
       responseText.includes("Sorry, this page isn't available") ||
       responseText.includes("The link you followed may be broken") ||
@@ -500,17 +541,11 @@ async function checkInstagramUsername(username) {
       data: response.data,
     };
   } catch (error) {
-    console.log(`Instagram check failed for ${username}:`, error.message);
-
-    if (error.response && error.response.status === 429) {
-      console.log("Instagram rate limit hit. Waiting 5 minutes...");
-      await new Promise((resolve) => setTimeout(resolve, 5 * 60 * 1000));
-    }
-
-    return {
-      status: 200,
-      data: null,
-    };
+    console.log(
+      `Instagram fallback check failed for ${username}:`,
+      error.message
+    );
+    throw error;
   }
 }
 
@@ -518,12 +553,14 @@ async function checkInstagramUsername(username) {
 cron.schedule("*/1 * * * *", async () => {
   if (monitoredUsernames.size === 0) return;
 
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  // Add a longer initial delay
+  await new Promise((resolve) => setTimeout(resolve, 3000));
 
   for (const [username, userDataArray] of monitoredUsernames) {
     if (userDataArray.some((data) => data.status === "checking")) continue;
 
-    await randomDelay(5000, 15000); // Increased delay for better rate limiting
+    // Add much longer random delays between checks
+    await randomDelay(10000, 30000); // 10-30 seconds between checks
 
     try {
       const updatedData = userDataArray.map((data) => ({
@@ -549,7 +586,7 @@ cron.schedule("*/1 * * * *", async () => {
           try {
             const user = await client.users.fetch(data.userId);
             await user.send(
-              `The Instagram username "${username}" Unbanned in ${formatTime(
+              `✅ The Instagram username "${username}" is now available! It took ${formatTime(
                 totalTime
               )}.`
             );
@@ -558,7 +595,7 @@ cron.schedule("*/1 * * * *", async () => {
           }
 
           logToAdminChannel(
-            `Username "${username}" became Unban ${
+            `✅ Username "${username}" became available for user ${
               data.userId
             } after ${formatTime(totalTime)}`
           );
@@ -580,6 +617,12 @@ cron.schedule("*/1 * * * *", async () => {
         lastChecked: Date.now(),
       }));
       monitoredUsernames.set(username, updatedData);
+
+      if (error.response && error.response.status === 429) {
+        console.log("⚠️ Instagram rate limit hit. Waiting 10 minutes...");
+        await new Promise((resolve) => setTimeout(resolve, 10 * 60 * 1000));
+      }
+
       console.log(`Check failed for username "${username}": ${error.message}`);
     }
   }
