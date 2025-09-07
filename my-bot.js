@@ -41,7 +41,7 @@ const monitoredUsernames = new Map();
 const userSubscriptions = new Map();
 
 // Admin user ID
-const ADMIN_ID = "1018599776842952774";
+const ADMIN_ID = process.env.ADMIN_ID;
 
 // Admin log channel ID from environment variables
 const ADMIN_LOG_CHANNEL_ID = process.env.ADMIN_LOG_CHANNEL_ID;
