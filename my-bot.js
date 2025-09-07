@@ -46,6 +46,9 @@ const ADMIN_ID = process.env.ADMIN_ID;
 // Admin log channel ID from environment variables
 const ADMIN_LOG_CHANNEL_ID = process.env.ADMIN_LOG_CHANNEL_ID;
 
+// Track processed messages to prevent duplicates
+const processedMessages = new Set();
+
 // Add random delay function
 function randomDelay(min, max) {
   return new Promise((resolve) =>
@@ -84,6 +87,16 @@ client.once("ready", () => {
 client.on("messageCreate", async (message) => {
   // Ignore messages from bots
   if (message.author.bot) return;
+
+  // Prevent duplicate message processing
+  if (processedMessages.has(message.id)) return;
+  processedMessages.add(message.id);
+
+  // Clean up old processed messages to prevent memory leaks
+  if (processedMessages.size > 1000) {
+    const oldestMessages = Array.from(processedMessages).slice(0, 100);
+    oldestMessages.forEach((id) => processedMessages.delete(id));
+  }
 
   // Check if user has an active subscription
   if (
@@ -452,9 +465,9 @@ async function logToAdminChannel(message) {
   }
 }
 
-// Improved Instagram username check function
+// Improved Instagram username check function with better error handling
 async function checkInstagramUsername(username) {
-  const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`;
+  const url = `https://www.instagram.com/${username}/`;
 
   const userAgents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -468,84 +481,38 @@ async function checkInstagramUsername(username) {
       headers: {
         "User-Agent": userAgents[Math.floor(Math.random() * userAgents.length)],
         "Accept-Language": "en-US,en;q=0.9",
-        Accept: "application/json",
-        "X-IG-App-ID": "936619743392459", // Important: Instagram app ID
-        "X-Requested-With": "XMLHttpRequest",
-        Referer: `https://www.instagram.com/${username}/`,
-        Origin: "https://www.instagram.com",
-      },
-      validateStatus: function (status) {
-        return status === 200 || status === 404;
-      },
-    });
-
-    // If we get a 404, the username is available
-    if (response.status === 404) {
-      return { status: 404, data: null };
-    }
-
-    // If we get data, check if the user exists
-    const data = response.data;
-    const isAvailable = !data.data || !data.data.user;
-
-    return {
-      status: isAvailable ? 404 : 200,
-      data: response.data,
-    };
-  } catch (error) {
-    console.log(`Instagram API check failed for ${username}:`, error.message);
-
-    // Fallback to the regular method if API fails
-    try {
-      return await checkInstagramUsernameFallback(username);
-    } catch (fallbackError) {
-      console.log(
-        `Fallback check also failed for ${username}:`,
-        fallbackError.message
-      );
-      return { status: 200, data: null }; // Assume unavailable on error
-    }
-  }
-}
-
-// Fallback method using the regular webpage
-async function checkInstagramUsernameFallback(username) {
-  const url = `https://www.instagram.com/${username}/`;
-
-  const userAgents = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  ];
-
-  try {
-    const response = await axios.get(url, {
-      timeout: 15000,
-      headers: {
-        "User-Agent": userAgents[Math.floor(Math.random() * userAgents.length)],
-        "Accept-Language": "en-US,en;q=0.9",
         Accept:
           "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         Referer: "https://www.google.com/",
       },
+      validateStatus: function (status) {
+        return (status >= 200 && status < 300) || status === 404;
+      },
     });
 
     const responseText = response.data;
+
+    // Check for various indicators that the username is available
     const isAvailable =
       responseText.includes('"user":null') ||
       responseText.includes("Sorry, this page isn't available") ||
       responseText.includes("The link you followed may be broken") ||
-      responseText.includes("Page Not Found");
+      responseText.includes("Page Not Found") ||
+      responseText.includes("login") || // Login page often means the account doesn't exist
+      response.status === 404;
 
     return {
       status: isAvailable ? 404 : 200,
       data: response.data,
     };
   } catch (error) {
-    console.log(
-      `Instagram fallback check failed for ${username}:`,
-      error.message
-    );
-    throw error;
+    console.log(`Instagram check failed for ${username}:`, error.message);
+
+    // Log the error to admin channel
+    logToAdminChannel(`Instagram API error for ${username}: ${error.message}`);
+
+    // Return unavailable status on error to continue monitoring
+    return { status: 200, data: null };
   }
 }
 
@@ -620,10 +587,16 @@ cron.schedule("*/1 * * * *", async () => {
 
       if (error.response && error.response.status === 429) {
         console.log("⚠️ Instagram rate limit hit. Waiting 10 minutes...");
+        logToAdminChannel(
+          "⚠️ Instagram rate limit hit. Pausing monitoring for 10 minutes."
+        );
         await new Promise((resolve) => setTimeout(resolve, 10 * 60 * 1000));
       }
 
       console.log(`Check failed for username "${username}": ${error.message}`);
+      logToAdminChannel(
+        `Check failed for username "${username}": ${error.message}`
+      );
     }
   }
 });
