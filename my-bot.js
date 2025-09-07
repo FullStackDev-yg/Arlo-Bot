@@ -292,7 +292,7 @@ client.on("messageCreate", async (message) => {
       if (result.status === 404) {
         try {
           await message.author.send(
-            `Initial check: The username "${username}" is already available!`
+            `Initial check: The username "${username}" is already Unban!`
           );
         } catch (error) {
           console.log(`Could not send DM to ${message.author.tag}`);
@@ -313,7 +313,7 @@ client.on("messageCreate", async (message) => {
       } else {
         try {
           await message.author.send(
-            `Initial check: The username "${username}" is currently unavailable. I'll keep monitoring.`
+            `Initial check: The username "${username}" is currently Banned. I'll keep monitoring.`
           );
         } catch (error) {
           console.log(`Could not send DM to ${message.author.tag}`);
@@ -322,7 +322,7 @@ client.on("messageCreate", async (message) => {
     } catch (error) {
       try {
         await message.author.send(
-          `Initial check: The username "${username}" is currently unavailable. I'll keep monitoring.`
+          `Initial check: The username "${username}" is currently Banned. I'll keep monitoring.`
         );
       } catch (error) {
         console.log(`Could not send DM to ${message.author.tag}`);
@@ -549,16 +549,16 @@ cron.schedule("*/1 * * * *", async () => {
           try {
             const user = await client.users.fetch(data.userId);
             await user.send(
-              `The Instagram username "${username}" is now available! It took ${formatTime(
+              `The Instagram username "${username}" Unbanned in ${formatTime(
                 totalTime
-              )} to become available.`
+              )}.`
             );
           } catch (error) {
             console.log(`Could not send DM to user ${data.userId}`);
           }
 
           logToAdminChannel(
-            `Username "${username}" became available for user ${
+            `Username "${username}" became Unban ${
               data.userId
             } after ${formatTime(totalTime)}`
           );
