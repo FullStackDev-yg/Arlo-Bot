@@ -4,7 +4,7 @@
   "description": "Instagram Unban monitor bot",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node my-bot.js"
   },
   "dependencies": {
     "axios": "^1.7.2",
